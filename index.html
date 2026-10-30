@@ -1,0 +1,675 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Калькулятор вымпельного ветра</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Oswald:wght@400;500&family=Golos+Text:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: шапка-лоция, ряд карточек судов, затем органы управления слева и тёмный ветровой прибор справа; ниже полярная диаграмма и два графика по курсу */
+:root{
+  --bg:#e8eef2; --surface:#ffffff; --ink:#0d2436; --muted:#567083; --line:#cfdae2; --tint:#dfe9f0;
+  --true:#1d61ae; --app:#cf3a24; --cur:#0d8784; --motion:#667a1b; --focus:#1d61ae;
+  --band:#0d2436; --band-ink:#e6eef3; --band-muted:#8fb0c4;
+  /* прибор: тёмный циферблат в обеих темах */
+  --d-bg:#0a1b29; --d-ring:#1f3547; --d-ink:#d9e6ee; --d-muted:#6f899b;
+  --d-true:#7db6f3; --d-app:#ff6a4d; --d-cur:#3fd2c7; --d-motion:#c8da6b; --d-stb:#3bbf6a; --d-port:#e5463c;
+  --f-disp:"Unbounded","Arial Black",sans-serif;
+  --f-num:"Oswald","Arial Narrow",sans-serif;
+  --f-body:"Golos Text",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0a151e; --surface:#112029; --ink:#e0e9ef; --muted:#8aa1b1; --line:#223644; --tint:#16303f;
+  --true:#72adf0; --app:#ff7a5c; --cur:#3cc8be; --motion:#b8cc66; --focus:#72adf0;
+  --band:#06111a; --band-ink:#e0e9ef; --band-muted:#7f9db0; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0a151e; --surface:#112029; --ink:#e0e9ef; --muted:#8aa1b1; --line:#223644; --tint:#16303f;
+  --true:#72adf0; --app:#ff7a5c; --cur:#3cc8be; --motion:#b8cc66; --focus:#72adf0;
+  --band:#06111a; --band-ink:#e0e9ef; --band-muted:#7f9db0; color-scheme:dark}
+
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45}
+.in{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+/* шапка */
+.band{background:var(--band);color:var(--band-ink);position:relative;overflow:hidden}
+.band canvas{position:absolute;inset:0;width:100%;height:100%;opacity:.5}
+.band .in{position:relative;padding-block:28px 26px;display:flex;flex-wrap:wrap;gap:14px 32px;align-items:flex-end;justify-content:space-between}
+.band h1{font-family:var(--f-disp);font-weight:700;font-size:clamp(26px,4.4vw,44px);line-height:1.05;margin:0;letter-spacing:-.01em;text-wrap:balance}
+.band p{margin:8px 0 0;color:var(--band-muted);max-width:60ch}
+.bandctl{display:flex;flex-wrap:wrap;gap:10px}
+.band .tog{border-color:#2c4a60}
+.band .tog button{color:var(--band-ink)}
+.band .tog button[aria-pressed="true"]{background:var(--band-ink);color:var(--band)}
+
+main.in{display:grid;gap:22px;padding-block:22px 48px}
+h2{font-family:var(--f-disp);font-weight:500;font-size:15px;letter-spacing:.02em;margin:0}
+.eyebrow{font-size:11.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+
+.tog{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+.tog button{font:inherit;font-size:13px;border:0;background:transparent;color:var(--ink);padding:6px 12px;cursor:pointer}
+.tog button[aria-pressed="true"]{background:var(--ink);color:var(--surface)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+
+/* выбор судна */
+.types{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+@media (max-width:820px){.types{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.type{font:inherit;color:inherit;text-align:left;cursor:pointer;background:var(--surface);border:1.5px solid var(--line);border-radius:10px;padding:12px 14px;display:grid;grid-template-columns:44px minmax(0,1fr);gap:4px 12px;align-items:center;transition:border-color .15s,background .15s}
+.type:hover{border-color:var(--muted)}
+.type[aria-pressed="true"]{border-color:var(--ink);background:var(--tint)}
+.type svg{grid-row:1/3;width:44px;height:64px}
+.type b{font-weight:600;font-size:14.5px}
+.type span{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.types[aria-disabled="true"] .type{opacity:.55}
+
+/* основной блок */
+.main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:22px;align-items:start}
+@media (max-width:900px){.main{grid-template-columns:minmax(0,1fr)}}
+.controls{display:grid;gap:14px;min-width:0}
+fieldset{margin:0;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px 16px;display:grid;gap:14px;min-width:0}
+legend{padding:0}
+.fhead{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.fhead h2{display:flex;align-items:center;gap:8px}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+.row{display:grid;grid-template-columns:minmax(0,1fr) 86px;gap:6px 12px;align-items:center}
+.row label{grid-column:1/-1;display:flex;justify-content:space-between;gap:8px;font-size:13.5px}
+.row label em{font-style:normal;color:var(--muted);font-size:12.5px;text-align:right}
+.row input[type=range]{width:100%}
+.row input[type=number]{width:100%;font:500 15px var(--f-mono);padding:6px 7px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font-variant-numeric:tabular-nums}
+.row input:disabled{opacity:.6}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{font:inherit;font-size:12.5px;padding:4px 10px;border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:999px;cursor:pointer}
+.chips button:hover{border-color:var(--ink)}
+.hint{font-size:12.5px;color:var(--muted);margin:0}
+
+/* прибор */
+.instr{background:var(--d-bg);border-radius:14px;padding:14px;color:var(--d-ink);display:grid;gap:12px;min-width:0}
+.instr svg{display:block;width:100%;height:auto;max-width:520px;margin:0 auto}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;justify-content:center;font-size:12px;color:var(--d-muted)}
+.legend i{display:inline-block;width:16px;height:3px;vertical-align:middle;margin-right:6px;border-radius:2px}
+.legend i.d{background:repeating-linear-gradient(90deg,var(--d-true) 0 4px,transparent 4px 7px)!important}
+.read{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--d-ring);border-radius:8px;overflow:hidden}
+@media (max-width:520px){.read{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.cell{background:var(--d-bg);padding:9px 10px;min-width:0}
+.cell .k{font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--d-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cell .v{font-family:var(--f-num);font-size:28px;line-height:1.15;font-variant-numeric:tabular-nums;white-space:nowrap}
+.cell .v small{font-size:13px;color:var(--d-muted);margin-left:3px;font-family:var(--f-body)}
+.c-app .v{color:var(--d-app)} .c-true .v{color:var(--d-true)} .c-mot .v{color:var(--d-motion)} .c-cur .v{color:var(--d-cur)}
+.status{font-size:13px;color:var(--d-muted);margin:0;padding:0 4px}
+.status b{color:var(--d-ink);font-weight:500}
+.status .warn{color:var(--d-app)}
+
+/* графики */
+.charts{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:22px}
+@media (max-width:900px){.charts{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 14px 8px;min-width:0;display:grid;gap:6px;align-content:start}
+.card svg{display:block;width:100%;height:auto}
+.stack{display:grid;gap:22px;min-width:0}
+.key{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--muted)}
+.key i{display:inline-block;width:16px;height:3px;vertical-align:middle;margin-right:5px;border-radius:2px}
+.key i.dash{height:0;border-top:2px dashed currentColor;background:none!important}
+
+/* пояснения */
+.notes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:22px}
+@media (max-width:900px){.notes{grid-template-columns:minmax(0,1fr)}}
+.notes p{margin:6px 0 0;max-width:65ch;color:var(--muted);font-size:14px}
+.notes h3{margin:0;font-size:14.5px;font-weight:600}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+<style>*,*::before,*::after{box-sizing:border-box}body{margin:0}[hidden]{display:none!important}</style>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>
+(function(){var t=window.Telegram&&Telegram.WebApp;if(!t)return;
+try{t.ready();t.expand();
+ function th(){if(!t.colorScheme)return;document.documentElement.setAttribute('data-theme',t.colorScheme==='dark'?'dark':'light');
+  try{t.setHeaderColor(t.colorScheme==='dark'?'#06111a':'#0d2436');t.setBackgroundColor(t.colorScheme==='dark'?'#0a151e':'#e8eef2');}catch(e){}}
+ th();t.onEvent('themeChanged',th);}catch(e){}})();
+</script>
+</head>
+<body>
+
+<header class="band">
+  <canvas id="waves" aria-hidden="true"></canvas>
+  <div class="in">
+    <div>
+      <h1 data-i18n="h1">Вымпельный ветер</h1>
+      <p data-i18n="lead"></p>
+    </div>
+    <div class="bandctl">
+      <div class="tog" id="langTog" aria-label="Language">
+        <button type="button" data-v="ru" lang="ru">RU</button>
+        <button type="button" data-v="en" lang="en">EN</button>
+        <button type="button" data-v="es" lang="es">ES</button>
+        <button type="button" data-v="de" lang="de">DE</button>
+        <button type="button" data-v="fr" lang="fr">FR</button>
+      </div>
+      <div class="tog" id="modeTog">
+        <button type="button" data-v="direct" aria-pressed="true" data-i18n="mode_direct"></button>
+        <button type="button" data-v="inverse" aria-pressed="false" data-i18n="mode_inverse"></button>
+      </div>
+      <div class="tog" id="unitTog">
+        <button type="button" data-v="kn" aria-pressed="true" data-i18n="kn"></button>
+        <button type="button" data-v="ms" aria-pressed="false" data-i18n="ms"></button>
+      </div>
+      <div class="tog" id="tackTog">
+        <button type="button" data-v="stb" aria-pressed="true" data-i18n="tack_stb"></button>
+        <button type="button" data-v="port" aria-pressed="false" data-i18n="tack_port"></button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="in">
+  <section>
+    <div class="types" id="types" role="group" data-i18n-aria="types_aria"></div>
+  </section>
+
+  <section class="main">
+    <div class="controls">
+      <fieldset>
+        <legend class="fhead"><h2><span class="dot" style="background:var(--true)"></span><span id="windTitle"></span></h2></legend>
+        <div id="grp-wind" style="display:grid;gap:14px"></div>
+      </fieldset>
+      <fieldset>
+        <legend class="fhead" style="width:100%">
+          <h2><span class="dot" style="background:var(--motion)"></span><span data-i18n="boat_title"></span></h2>
+        </legend>
+        <div class="tog" id="autoTog" style="justify-self:start">
+          <button type="button" data-v="1" aria-pressed="true" data-i18n="auto_polar"></button>
+          <button type="button" data-v="0" aria-pressed="false" data-i18n="auto_manual"></button>
+        </div>
+        <div id="grp-boat" style="display:grid;gap:14px"></div>
+        <p class="hint" id="boatHint"></p>
+      </fieldset>
+      <fieldset>
+        <legend class="fhead"><h2><span class="dot" style="background:var(--cur)"></span><span data-i18n="cur_title"></span></h2></legend>
+        <div id="grp-cur" style="display:grid;gap:14px"></div>
+        <div class="chips" id="curChips">
+          <button type="button" data-c="0" data-i18n="chip_none"></button>
+          <button type="button" data-p="180" data-i18n="chip_against"></button>
+          <button type="button" data-p="0" data-i18n="chip_with"></button>
+          <button type="button" data-p="90" data-i18n="chip_right"></button>
+          <button type="button" data-p="-90" data-i18n="chip_left"></button>
+        </div>
+      </fieldset>
+    </div>
+
+    <div class="instr">
+      <svg id="dia" viewBox="-222 -222 444 444" role="img" data-i18n-aria="dia_aria"></svg>
+      <div class="legend">
+        <span><i style="background:var(--d-true)"></i><span data-i18n="lg_ground"></span></span>
+        <span><i style="background:var(--d-cur)"></i><span data-i18n="lg_cur"></span></span>
+        <span><i class="d"></i><span data-i18n="lg_water"></span></span>
+        <span><i style="background:var(--d-motion)"></i><span data-i18n="lg_motion"></span></span>
+        <span><i style="background:var(--d-app)"></i><span data-i18n="lg_app"></span></span>
+        <span><i style="background:var(--d-ink)"></i><span data-i18n="lg_sog"></span></span>
+      </div>
+      <div class="read" id="read"></div>
+      <p class="status" id="status"></p>
+    </div>
+  </section>
+
+  <section class="charts">
+    <div class="card">
+      <h2 data-i18n="polar_title"></h2>
+      <div class="key" id="polarKey"></div>
+      <svg id="polar" viewBox="0 0 300 430" role="img" data-i18n-aria="polar_title"></svg>
+    </div>
+    <div class="stack">
+      <div class="card">
+        <h2 data-i18n="ch1_title"></h2>
+        <div class="key">
+          <span style="color:var(--app)"><i style="background:var(--app)"></i>AWA</span>
+          <span style="color:var(--true)"><i class="dash"></i><span data-i18n="twa_water"></span></span>
+          <span><i class="dash" style="color:var(--muted)"></i><span data-i18n="k_diag"></span></span>
+        </div>
+        <svg id="ch1" viewBox="0 0 560 250"></svg>
+      </div>
+      <div class="card">
+        <h2 data-i18n="ch2_title"></h2>
+        <div class="key">
+          <span style="color:var(--app)"><i style="background:var(--app)"></i>AWS</span>
+          <span style="color:var(--motion)"><i style="background:var(--motion)"></i><span data-i18n="k_bs"></span></span>
+          <span><i class="dash" style="color:var(--ink)"></i>SOG</span>
+          <span style="color:var(--true)"><i class="dash"></i><span data-i18n="lg_ground"></span></span>
+        </div>
+        <svg id="ch2" viewBox="0 0 560 250"></svg>
+      </div>
+    </div>
+  </section>
+
+  <section class="notes">
+    <div><h3 data-i18n="n1h"></h3><p data-i18n="n1p"></p></div>
+    <div><h3 data-i18n="n2h"></h3><p data-i18n="n2p"></p></div>
+    <div><h3 data-i18n="n3h"></h3><p data-i18n="n3p"></p></div>
+  </section>
+</main>
+
+<script>
+(function(){
+/* ---------- переводы ---------- */
+const L={
+ru:{title:'Калькулятор вымпельного ветра',h1:'Вымпельный ветер',
+ lead:'Истинный ветер, ход яхты и течение складываются в ветер, который чувствуют паруса. Выберите судно, курс и течение.',
+ mode_direct:'По прогнозу',mode_inverse:'По датчику',kn:'уз',ms:'м/с',tack_stb:'правый галс',tack_port:'левый',
+ types_aria:'Тип судна',wind_direct:'Ветер над грунтом и курс',wind_inverse:'Показания датчика ветра',
+ boat_title:'Ход яхты',auto_polar:'по поляре судна',auto_manual:'вручную',cur_title:'Течение',
+ chip_none:'нет течения',chip_against:'против ветра',chip_with:'по ветру',chip_right:'поперёк, вправо',chip_left:'поперёк, влево',
+ dia_aria:'Ветровой прибор: векторы ветра, хода и течения',
+ lg_ground:'ветер над грунтом',lg_cur:'от течения',lg_water:'ветер над водой',lg_motion:'от хода',lg_app:'вымпельный',lg_sog:'путь над грунтом',
+ polar_title:'Поляра: скорость по воде',ch1_title:'Углы по курсу',twa_water:'TWA над водой',tws_water:'TWS над водой',k_diag:'угол = курсу',
+ ch2_title:'Скорости по курсу',k_bs:'скорость по воде',cell_bs:'Скорость по воде',cell_shift:'Сдвиг TWA→AWA',cell_ground:'Ветер над грунтом',cell_vmg:'VMG над грунтом',
+ r_gws:'Скорость ветра',h_gws:'по прогнозу или с берега',r_gwa:'Угол ветра от носа (курс)',h_gwa:'0° — в лоб, 180° — в корму',
+ r_aws:'AWS по датчику',r_awa:'AWA по датчику',r_bs:'Скорость по воде',r_bs_inv:'Скорость по лагу',r_cs:'Скорость течения',r_psi:'Куда течёт относительно ветра',
+ psi_with:'по ветру',psi_against:'против ветра',psi_right:'поперёк, вправо от ветра',psi_left:'поперёк, влево от ветра',
+ t_cruiser:'Круизная яхта',t_racer:'Спортивная яхта',t_cat:'Круизный катамаран',t_board:'Виндсёрф',
+ spec:'острый ~{n}° · до {v} {u} при ветре {w}',
+ hint_auto:'Скорость считается по условной поляре «{n}» от ветра над водой.',hint_inv:'Скорость по лагу задаётся вручную.',hint_man:'Скорость задана вручную, поляра не используется.',
+ nogo:'Курс в мёртвом секторе: {n} так остро не идёт (нужно ≥ {a}° к ветру над водой).',
+ cur1:'Ветер над водой <b>{ww} {u}</b> под <b>{twa}°</b> вместо {g} {u} под {th}°. AWA <b>{awa}°</b>, без течения было бы {awa0}°; AWS {a} против {a0} {u}.',
+ cur2:'Скорость по воде {v} {u} (без течения {v0}).',cur3:'Снос течением <b>{d}°</b> {s}.',right:'вправо',left:'влево',
+ nowind:'Ветра нет: вымпельный ветер равен скорости хода и дует в нос.',
+ maxs:'BS/TWS = {q}. Наибольший сдвиг <b>{d}°</b> при угле ветра {b}°.',
+ faster:'BS/TWS = {q}: судно быстрее ветра, вымпельный ветер всегда спереди траверза.',
+ pk_main:'{n}, ветер над водой {w} {u}',pk_other:'другие силы ветра',pk_nogo:'мёртвый сектор',
+ ax_angle:'угол, °',ax_speed:'скорость, {u}',ax_x:'угол ветра над грунтом от носа',
+ n1h:'Что показывают приборы',n1p:'Датчик на топе меряет вымпельный ветер, лаг меряет скорость по воде. Из них прибор считает истинный ветер относительно воды. На течении он отличается от прогноза и от ветра на берегу.',
+ n2h:'Ветер против течения',n2p:'Если течение идёт навстречу ветру, над водой дует сильнее на скорость течения, а волна становится короче и круче. Течение по ветру ослабляет ветер над водой.',
+ n3h:'Вымпельный ветер и путь над грунтом',n3p:'Вымпельный ветер равен разности ветра над грунтом и скорости яхты над грунтом (SOG). Течение меняет его через изменение SOG и через скорость по воде, которую даёт поляра.'},
+en:{title:'Apparent Wind Calculator',h1:'Apparent Wind',
+ lead:'True wind, boat speed and current add up to the wind your sails feel. Pick a boat, a course and a current.',
+ mode_direct:'From forecast',mode_inverse:'From sensor',kn:'kn',ms:'m/s',tack_stb:'starboard tack',tack_port:'port',
+ types_aria:'Boat type',wind_direct:'Ground wind and course',wind_inverse:'Wind sensor readings',
+ boat_title:'Boat speed',auto_polar:'from boat polar',auto_manual:'manual',cur_title:'Current',
+ chip_none:'no current',chip_against:'against wind',chip_with:'with wind',chip_right:'across, to the right',chip_left:'across, to the left',
+ dia_aria:'Wind instrument: wind, boat and current vectors',
+ lg_ground:'ground wind',lg_cur:'from current',lg_water:'wind over water',lg_motion:'from boat motion',lg_app:'apparent',lg_sog:'track over ground',
+ polar_title:'Polar: speed through water',ch1_title:'Angles vs course',twa_water:'TWA over water',tws_water:'TWS over water',k_diag:'angle = course',
+ ch2_title:'Speeds vs course',k_bs:'speed through water',cell_bs:'Boat speed',cell_shift:'TWA→AWA shift',cell_ground:'Ground wind',cell_vmg:'VMG over ground',
+ r_gws:'Wind speed',h_gws:'from forecast or ashore',r_gwa:'Wind angle off the bow (course)',h_gwa:'0° head-on, 180° dead astern',
+ r_aws:'AWS from sensor',r_awa:'AWA from sensor',r_bs:'Speed through water',r_bs_inv:'Log speed',r_cs:'Current speed',r_psi:'Current direction relative to wind',
+ psi_with:'with the wind',psi_against:'against the wind',psi_right:'across, right of wind',psi_left:'across, left of wind',
+ t_cruiser:'Cruising yacht',t_racer:'Racing yacht',t_cat:'Cruising catamaran',t_board:'Windsurfer',
+ spec:'pointing ~{n}° · up to {v} {u} in {w}',
+ hint_auto:'Speed comes from an approximate “{n}” polar, using wind over water.',hint_inv:'Log speed is entered manually.',hint_man:'Speed set manually, polar not used.',
+ nogo:'No-go zone: a {n} can’t point this high (needs ≥ {a}° to the wind over water).',
+ cur1:'Wind over water <b>{ww} {u}</b> at <b>{twa}°</b> instead of {g} {u} at {th}°. AWA <b>{awa}°</b>, without current {awa0}°; AWS {a} vs {a0} {u}.',
+ cur2:'Speed through water {v} {u} (without current {v0}).',cur3:'Set by current <b>{d}°</b> {s}.',right:'to the right',left:'to the left',
+ nowind:'No wind: apparent wind equals boat speed, straight on the bow.',
+ maxs:'BS/TWS = {q}. Largest shift <b>{d}°</b> at a wind angle of {b}°.',
+ faster:'BS/TWS = {q}: the boat is faster than the wind, apparent wind always forward of the beam.',
+ pk_main:'{n}, wind over water {w} {u}',pk_other:'other wind speeds',pk_nogo:'no-go zone',
+ ax_angle:'angle, °',ax_speed:'speed, {u}',ax_x:'ground wind angle off the bow',
+ n1h:'What the instruments show',n1p:'The masthead sensor measures apparent wind and the log measures speed through water. From these the instrument computes true wind relative to the water. In a current it differs from the forecast and from the wind ashore.',
+ n2h:'Wind against current',n2p:'When the current runs against the wind, the wind over water is stronger by the current speed, and waves get shorter and steeper. A current running with the wind weakens the wind over water.',
+ n3h:'Apparent wind and track over ground',n3p:'Apparent wind is the ground wind minus the boat’s velocity over ground (SOG). The current changes it through SOG and through the speed through water that the polar gives.'},
+es:{title:'Calculadora de viento aparente',h1:'Viento aparente',
+ lead:'El viento real, la velocidad del barco y la corriente se suman en el viento que sienten las velas. Elige barco, rumbo y corriente.',
+ mode_direct:'Según previsión',mode_inverse:'Según sensor',kn:'kn',ms:'m/s',tack_stb:'amura de estribor',tack_port:'babor',
+ types_aria:'Tipo de barco',wind_direct:'Viento sobre el fondo y rumbo',wind_inverse:'Lecturas del sensor de viento',
+ boat_title:'Velocidad del barco',auto_polar:'según la polar',auto_manual:'manual',cur_title:'Corriente',
+ chip_none:'sin corriente',chip_against:'contra el viento',chip_with:'a favor del viento',chip_right:'transversal, a la derecha',chip_left:'transversal, a la izquierda',
+ dia_aria:'Instrumento de viento: vectores de viento, avance y corriente',
+ lg_ground:'viento sobre el fondo',lg_cur:'por la corriente',lg_water:'viento sobre el agua',lg_motion:'por el avance',lg_app:'aparente',lg_sog:'rumbo sobre el fondo',
+ polar_title:'Polar: velocidad sobre el agua',ch1_title:'Ángulos según rumbo',twa_water:'TWA sobre el agua',tws_water:'TWS sobre el agua',k_diag:'ángulo = rumbo',
+ ch2_title:'Velocidades según rumbo',k_bs:'velocidad sobre el agua',cell_bs:'Velocidad',cell_shift:'Desvío TWA→AWA',cell_ground:'Viento sobre el fondo',cell_vmg:'VMG sobre el fondo',
+ r_gws:'Velocidad del viento',h_gws:'según previsión o en tierra',r_gwa:'Ángulo del viento desde proa (rumbo)',h_gwa:'0° de proa, 180° de popa',
+ r_aws:'AWS del sensor',r_awa:'AWA del sensor',r_bs:'Velocidad sobre el agua',r_bs_inv:'Velocidad de corredera',r_cs:'Velocidad de la corriente',r_psi:'Dirección de la corriente respecto al viento',
+ psi_with:'a favor del viento',psi_against:'contra el viento',psi_right:'transversal, a la derecha del viento',psi_left:'transversal, a la izquierda del viento',
+ t_cruiser:'Velero de crucero',t_racer:'Velero de regata',t_cat:'Catamarán de crucero',t_board:'Windsurf',
+ spec:'ceñida ~{n}° · hasta {v} {u} con {w}',
+ hint_auto:'La velocidad sale de una polar aproximada «{n}» con el viento sobre el agua.',hint_inv:'La velocidad de corredera se introduce a mano.',hint_man:'Velocidad manual, la polar no se usa.',
+ nogo:'Zona muerta: un {n} no ciñe tanto (necesita ≥ {a}° al viento sobre el agua).',
+ cur1:'Viento sobre el agua <b>{ww} {u}</b> a <b>{twa}°</b> en lugar de {g} {u} a {th}°. AWA <b>{awa}°</b>, sin corriente sería {awa0}°; AWS {a} frente a {a0} {u}.',
+ cur2:'Velocidad sobre el agua {v} {u} (sin corriente {v0}).',cur3:'Deriva por corriente <b>{d}°</b> {s}.',right:'a la derecha',left:'a la izquierda',
+ nowind:'Sin viento: el aparente es igual a la velocidad del barco y viene de proa.',
+ maxs:'BS/TWS = {q}. Mayor desvío <b>{d}°</b> con un ángulo de viento de {b}°.',
+ faster:'BS/TWS = {q}: el barco va más rápido que el viento, el aparente siempre llega por delante del través.',
+ pk_main:'{n}, viento sobre el agua {w} {u}',pk_other:'otras intensidades de viento',pk_nogo:'zona muerta',
+ ax_angle:'ángulo, °',ax_speed:'velocidad, {u}',ax_x:'ángulo del viento sobre el fondo desde proa',
+ n1h:'Qué muestran los instrumentos',n1p:'El sensor del tope mide el viento aparente y la corredera, la velocidad sobre el agua. Con ellos el instrumento calcula el viento real respecto al agua. Con corriente difiere de la previsión y del viento en tierra.',
+ n2h:'Viento contra corriente',n2p:'Cuando la corriente va contra el viento, sobre el agua sopla más fuerte en la velocidad de la corriente y las olas se vuelven más cortas y empinadas. Una corriente a favor del viento lo debilita.',
+ n3h:'Viento aparente y rumbo sobre el fondo',n3p:'El viento aparente es el viento sobre el fondo menos la velocidad del barco sobre el fondo (SOG). La corriente lo cambia a través de la SOG y de la velocidad sobre el agua que da la polar.'},
+de:{title:'Rechner für scheinbaren Wind',h1:'Scheinbarer Wind',
+ lead:'Wahrer Wind, Bootsfahrt und Strömung ergeben zusammen den Wind, den die Segel spüren. Wähle Boot, Kurs und Strömung.',
+ mode_direct:'Nach Vorhersage',mode_inverse:'Nach Sensor',kn:'kn',ms:'m/s',tack_stb:'Steuerbordbug',tack_port:'Backbord',
+ types_aria:'Bootstyp',wind_direct:'Wind über Grund und Kurs',wind_inverse:'Werte des Windsensors',
+ boat_title:'Bootsfahrt',auto_polar:'nach Polare',auto_manual:'manuell',cur_title:'Strömung',
+ chip_none:'keine Strömung',chip_against:'gegen den Wind',chip_with:'mit dem Wind',chip_right:'quer, nach rechts',chip_left:'quer, nach links',
+ dia_aria:'Windinstrument: Vektoren von Wind, Fahrt und Strömung',
+ lg_ground:'Wind über Grund',lg_cur:'durch Strömung',lg_water:'Wind über Wasser',lg_motion:'durch Fahrt',lg_app:'scheinbar',lg_sog:'Kurs über Grund',
+ polar_title:'Polare: Fahrt durchs Wasser',ch1_title:'Winkel über Kurs',twa_water:'TWA über Wasser',tws_water:'TWS über Wasser',k_diag:'Winkel = Kurs',
+ ch2_title:'Geschwindigkeiten über Kurs',k_bs:'Fahrt durchs Wasser',cell_bs:'Bootsfahrt',cell_shift:'Versatz TWA→AWA',cell_ground:'Wind über Grund',cell_vmg:'VMG über Grund',
+ r_gws:'Windgeschwindigkeit',h_gws:'laut Vorhersage oder an Land',r_gwa:'Windwinkel zum Bug (Kurs)',h_gwa:'0° von vorn, 180° von achtern',
+ r_aws:'AWS vom Sensor',r_awa:'AWA vom Sensor',r_bs:'Fahrt durchs Wasser',r_bs_inv:'Logge-Fahrt',r_cs:'Strömungsgeschwindigkeit',r_psi:'Strömungsrichtung relativ zum Wind',
+ psi_with:'mit dem Wind',psi_against:'gegen den Wind',psi_right:'quer, rechts vom Wind',psi_left:'quer, links vom Wind',
+ t_cruiser:'Fahrtenyacht',t_racer:'Regattayacht',t_cat:'Fahrtenkatamaran',t_board:'Windsurfer',
+ spec:'Höhe ~{n}° · bis {v} {u} bei {w}',
+ hint_auto:'Die Fahrt stammt aus einer Näherungspolare „{n}“ mit dem Wind über Wasser.',hint_inv:'Die Logge-Fahrt wird manuell eingegeben.',hint_man:'Fahrt manuell, Polare wird nicht genutzt.',
+ nogo:'Toter Winkel: {n} läuft nicht so hoch (braucht ≥ {a}° zum Wind über Wasser).',
+ cur1:'Wind über Wasser <b>{ww} {u}</b> unter <b>{twa}°</b> statt {g} {u} unter {th}°. AWA <b>{awa}°</b>, ohne Strömung {awa0}°; AWS {a} statt {a0} {u}.',
+ cur2:'Fahrt durchs Wasser {v} {u} (ohne Strömung {v0}).',cur3:'Versatz durch Strömung <b>{d}°</b> {s}.',right:'nach rechts',left:'nach links',
+ nowind:'Kein Wind: Der scheinbare Wind entspricht der Fahrt und kommt genau von vorn.',
+ maxs:'BS/TWS = {q}. Größter Versatz <b>{d}°</b> bei einem Windwinkel von {b}°.',
+ faster:'BS/TWS = {q}: Das Boot ist schneller als der Wind, der scheinbare Wind kommt immer vorlicher als querab.',
+ pk_main:'{n}, Wind über Wasser {w} {u}',pk_other:'andere Windstärken',pk_nogo:'toter Winkel',
+ ax_angle:'Winkel, °',ax_speed:'Geschwindigkeit, {u}',ax_x:'Windwinkel über Grund zum Bug',
+ n1h:'Was die Instrumente zeigen',n1p:'Der Sensor im Masttop misst den scheinbaren Wind, die Logge die Fahrt durchs Wasser. Daraus berechnet das Instrument den wahren Wind relativ zum Wasser. Bei Strömung weicht er von der Vorhersage und vom Wind an Land ab.',
+ n2h:'Wind gegen Strom',n2p:'Läuft die Strömung gegen den Wind, weht es über dem Wasser um die Strömungsgeschwindigkeit stärker, und die Wellen werden kürzer und steiler. Strömung mit dem Wind schwächt den Wind über Wasser ab.',
+ n3h:'Scheinbarer Wind und Kurs über Grund',n3p:'Der scheinbare Wind ist der Wind über Grund minus die Geschwindigkeit des Boots über Grund (SOG). Die Strömung verändert ihn über die SOG und über die Fahrt durchs Wasser, die die Polare liefert.'},
+fr:{title:'Calculateur de vent apparent',h1:'Vent apparent',
+ lead:'Vent réel, vitesse du bateau et courant se combinent pour donner le vent que ressentent les voiles. Choisissez un bateau, un cap et un courant.',
+ mode_direct:'Selon prévision',mode_inverse:'Selon capteur',kn:'nd',ms:'m/s',tack_stb:'tribord amures',tack_port:'bâbord',
+ types_aria:'Type de bateau',wind_direct:'Vent fond et cap',wind_inverse:'Mesures du capteur de vent',
+ boat_title:'Vitesse du bateau',auto_polar:'selon la polaire',auto_manual:'manuel',cur_title:'Courant',
+ chip_none:'pas de courant',chip_against:'contre le vent',chip_with:'avec le vent',chip_right:'travers, vers la droite',chip_left:'travers, vers la gauche',
+ dia_aria:'Instrument de vent : vecteurs du vent, de la vitesse et du courant',
+ lg_ground:'vent fond',lg_cur:'dû au courant',lg_water:'vent surface',lg_motion:'dû à la vitesse',lg_app:'apparent',lg_sog:'route fond',
+ polar_title:'Polaire : vitesse surface',ch1_title:'Angles selon le cap',twa_water:'TWA surface',tws_water:'TWS surface',k_diag:'angle = cap',
+ ch2_title:'Vitesses selon le cap',k_bs:'vitesse surface',cell_bs:'Vitesse surface',cell_shift:'Écart TWA→AWA',cell_ground:'Vent fond',cell_vmg:'VMG fond',
+ r_gws:'Vitesse du vent',h_gws:'prévision ou à terre',r_gwa:'Angle du vent par rapport à l’étrave (cap)',h_gwa:'0° de face, 180° plein arrière',
+ r_aws:'AWS du capteur',r_awa:'AWA du capteur',r_bs:'Vitesse surface',r_bs_inv:'Vitesse loch',r_cs:'Vitesse du courant',r_psi:'Direction du courant par rapport au vent',
+ psi_with:'avec le vent',psi_against:'contre le vent',psi_right:'travers, à droite du vent',psi_left:'travers, à gauche du vent',
+ t_cruiser:'Voilier de croisière',t_racer:'Voilier de course',t_cat:'Catamaran de croisière',t_board:'Planche à voile',
+ spec:'près ~{n}° · jusqu’à {v} {u} par {w}',
+ hint_auto:'La vitesse vient d’une polaire approximative « {n} » d’après le vent surface.',hint_inv:'La vitesse loch se saisit à la main.',hint_man:'Vitesse saisie à la main, polaire non utilisée.',
+ nogo:'Zone morte : impossible de remonter si près en {n} (il faut ≥ {a}° du vent surface).',
+ cur1:'Vent surface <b>{ww} {u}</b> à <b>{twa}°</b> au lieu de {g} {u} à {th}°. AWA <b>{awa}°</b>, sans courant {awa0}° ; AWS {a} contre {a0} {u}.',
+ cur2:'Vitesse surface {v} {u} (sans courant {v0}).',cur3:'Dérive due au courant <b>{d}°</b> {s}.',right:'vers la droite',left:'vers la gauche',
+ nowind:'Pas de vent : le vent apparent égale la vitesse du bateau et vient de face.',
+ maxs:'BS/TWS = {q}. Écart maximal <b>{d}°</b> pour un angle de vent de {b}°.',
+ faster:'BS/TWS = {q} : le bateau va plus vite que le vent, l’apparent reste toujours sur l’avant du travers.',
+ pk_main:'{n}, vent surface {w} {u}',pk_other:'autres forces de vent',pk_nogo:'zone morte',
+ ax_angle:'angle, °',ax_speed:'vitesse, {u}',ax_x:'angle du vent fond par rapport à l’étrave',
+ n1h:'Ce qu’affichent les instruments',n1p:'Le capteur en tête de mât mesure le vent apparent, le loch la vitesse surface. L’instrument en déduit le vent réel par rapport à l’eau. Avec du courant, il diffère de la prévision et du vent à terre.',
+ n2h:'Vent contre courant',n2p:'Quand le courant va contre le vent, le vent surface est plus fort de la vitesse du courant et la mer devient plus courte et plus creuse. Un courant dans le sens du vent affaiblit le vent surface.',
+ n3h:'Vent apparent et route fond',n3p:'Le vent apparent est le vent fond moins la vitesse du bateau sur le fond (SOG). Le courant le modifie via la SOG et via la vitesse surface donnée par la polaire.'}
+};
+const LANGS=Object.keys(L);
+function detectLang(){
+  const h=(location.hash||'').slice(1).toLowerCase();if(LANGS.includes(h))return h;
+  try{const s=localStorage.getItem('aw-lang');if(LANGS.includes(s))return s;}catch(e){}
+  const cands=[];
+  try{const tg=window.Telegram&&Telegram.WebApp&&Telegram.WebApp.initDataUnsafe&&Telegram.WebApp.initDataUnsafe.user;if(tg&&tg.language_code)cands.push(tg.language_code);}catch(e){}
+  (navigator.languages||[navigator.language||'']).forEach(l=>cands.push(l));
+  for(const c of cands){const k=String(c).slice(0,2).toLowerCase();if(LANGS.includes(k))return k;}
+  return 'en';}
+let LANG=detectLang();
+const LOC={ru:'ru-RU',en:'en-GB',es:'es-ES',de:'de-DE',fr:'fr-FR'};
+const tr=(k,p)=>{let s=(L[LANG][k]!=null?L[LANG][k]:L.en[k])||k;if(p)for(const q in p)s=s.split('{'+q+'}').join(p[q]);return s;};
+
+const D=Math.PI/180, KN2MS=0.514444;
+const $=id=>document.getElementById(id);
+const NS='http://www.w3.org/2000/svg';
+function el(tag,a,p,t){const e=document.createElementNS(NS,tag);for(const k in a)e.setAttribute(k,a[k]);if(t!=null)e.textContent=t;p&&p.appendChild(e);return e;}
+const fmt=(x,d=1)=>Number.isFinite(x)?x.toLocaleString(LOC[LANG],{minimumFractionDigits:d,maximumFractionDigits:d}):'—';
+
+/* ---------- суда и поляры (узлы) ---------- */
+function interp(t,x){if(x<=t[0][0])return t[0][1];for(let i=1;i<t.length;i++){if(x<=t[i][0]){const[a,b]=[t[i-1],t[i]];return a[1]+(b[1]-a[1])*(x-a[0])/(b[0]-a[0]);}}return t[t.length-1][1];}
+const smooth=(a,b,x)=>{const t=Math.min(1,Math.max(0,(x-a)/(b-a)));return t*t*(3-2*t);};
+const TYPES={
+  cruiser:{nogo:40,
+    g:[[0,0],[28,.12],[40,.62],[45,.78],[52,.88],[60,.93],[75,.98],[90,1],[110,1],[120,.99],[135,.94],[150,.86],[165,.78],[180,.72]],
+    v:(W,b,g)=>7.6*Math.tanh(W/9)*g,
+    hull:'M0,-44 C14,-30 17,-4 15,38 L-15,38 C-17,-4 -14,-30 0,-44Z'},
+  racer:{nogo:36,
+    g:[[0,0],[25,.12],[36,.66],[42,.8],[50,.9],[60,.96],[75,1],[90,1.05],[110,1.1],[125,1.14],[140,1.12],[155,1],[170,.86],[180,.8]],
+    v:(W,b,g)=>9*Math.tanh(W/8)*g+Math.min(6,0.35*Math.max(0,W-15))*Math.exp(-(((b-135)/22)**2)),
+    hull:'M0,-46 C11,-32 17,-4 17,38 L-17,38 C-17,-4 -11,-32 0,-46Z',bow:true},
+  cat:{nogo:45,
+    g:[[0,0],[32,.1],[45,.55],[50,.68],[60,.8],[75,.92],[90,1],[110,1.04],[125,1.04],[140,.97],[155,.88],[170,.78],[180,.74]],
+    v:(W,b,g)=>9.5*Math.tanh(W/13)*g,
+    hull:'M-17,-42 C-12,-30 -10,0 -11,38 L-23,38 C-24,0 -22,-30 -17,-42Z M17,-42 C12,-30 10,0 11,38 L23,38 C24,0 22,-30 17,-42Z',cat:true},
+  board:{nogo:45,
+    g:[[0,0],[32,.1],[45,.55],[55,.8],[70,.95],[90,1],[105,1.05],[120,1],[135,.88],[150,.7],[165,.55],[180,.45]],
+    v:(W,b,g)=>Math.min(40,W*(0.4+1.05*smooth(9,16,W))*g),
+    hull:'M0,-44 C9,-30 11,0 9,32 C7,40 -7,40 -9,32 C-11,0 -9,-30 0,-44Z',board:true}
+};
+const tname=k=>tr('t_'+k);
+const tnameLow=k=>LANG==='de'?tname(k):tname(k).toLowerCase();
+const polar=(t,W,b)=>{if(W<=0)return 0;const T=TYPES[t];b=Math.abs(b);return Math.max(0,T.v(W,b,interp(T.g,b)));};
+
+function hullSVG(T,parent,s,stroke,fill){const g=el('g',{transform:`scale(${s})`},parent);
+  if(T.cat){el('path',{d:'M-11,-30 L11,-30 L11,30 L-11,30Z',style:`fill:${fill};stroke:${stroke};stroke-width:${1.2/s};opacity:.6`},g);}
+  el('path',{d:T.hull,style:`fill:${fill};stroke:${stroke};stroke-width:${1.6/s};stroke-linejoin:round`},g);
+  if(T.bow)el('line',{x1:0,y1:-46,x2:0,y2:-58,style:`stroke:${stroke};stroke-width:${1.6/s}`},g);
+  if(T.board){el('circle',{cx:0,cy:-6,r:2.5,style:`fill:${stroke}`},g);el('line',{x1:0,y1:-6,x2:0,y2:22,style:`stroke:${stroke};stroke-width:${2/s}`},g);}
+  else if(!T.cat){el('circle',{cx:0,cy:-10,r:2.5,style:`fill:${stroke}`},g);}
+  else el('circle',{cx:0,cy:-14,r:2.5,style:`fill:${stroke}`},g);
+  return g;}
+
+/* ---------- состояние ---------- */
+const S={mode:'direct',unit:'kn',tack:'stb',type:'cruiser',auto:true,G:12,th:60,V:6,C:0,psi:180,A:15,a:40};
+const uf=()=>S.unit==='kn'?1:KN2MS, un=()=>tr(S.unit);
+
+const ROWS=[
+ {id:'gws',key:'G',grp:'wind',mode:'direct',kind:'spd',max:[40,20],lk:'r_gws',hk:'h_gws'},
+ {id:'gwa',key:'th',grp:'wind',mode:'direct',kind:'ang',min:0,max:180,lk:'r_gwa',hk:'h_gwa'},
+ {id:'aws',key:'A',grp:'wind',mode:'inverse',kind:'spd',max:[60,30],lk:'r_aws'},
+ {id:'awa',key:'a',grp:'wind',mode:'inverse',kind:'ang',min:0,max:180,lk:'r_awa'},
+ {id:'bs',key:'V',grp:'boat',kind:'spd',max:[40,20],lk:'r_bs'},
+ {id:'cs',key:'C',grp:'cur',kind:'spd',max:[6,3],lk:'r_cs'},
+ {id:'psi',key:'psi',grp:'cur',kind:'ang',min:-180,max:180,lk:'r_psi'}
+];
+const ACC={wind:'var(--true)',boat:'var(--motion)',cur:'var(--cur)'};
+ROWS.forEach(r=>{
+  const d=document.createElement('div');d.className='row';d.dataset.mode=r.mode||'';
+  d.innerHTML=`<label for="${r.id}_r"><span><span class="lt"></span>, <span class="u"></span></span><em id="${r.id}_h"></em></label>
+  <input type="range" id="${r.id}_r" step="${r.kind==='spd'?0.1:1}" style="accent-color:${ACC[r.grp]}">
+  <input type="number" id="${r.id}_n" step="${r.kind==='spd'?0.1:1}">`;
+  $('grp-'+r.grp).appendChild(d);r.el=d;
+  const f=e=>{let v=parseFloat(e.target.value);if(!Number.isFinite(v))return;
+    if(r.kind==='ang')v=Math.max(r.min,Math.min(r.max,v));else v=Math.max(0,v);
+    S[r.key]=r.kind==='spd'?v/uf():v;
+    (e.target.type==='range'?$(r.id+'_n'):$(r.id+'_r')).value=v;render();};
+  $(r.id+'_r').addEventListener('input',f);$(r.id+'_n').addEventListener('input',f);
+});
+function rowTexts(){ROWS.forEach(r=>{const lk=r.id==='bs'&&S.mode==='inverse'?'r_bs_inv':r.lk;
+  r.el.querySelector('.lt').textContent=tr(lk);r.el.querySelector('.u').textContent=r.kind==='spd'?un():'°';
+  $(r.id+'_n').setAttribute('aria-label',tr(lk));if(r.hk)$(r.id+'_h').textContent=tr(r.hk);});}
+function setRanges(){ROWS.forEach(r=>{const mx=r.kind==='spd'?r.max[S.unit==='kn'?0:1]:r.max,mn=r.kind==='spd'?0:r.min;
+  $(r.id+'_r').min=mn;$(r.id+'_r').max=mx;$(r.id+'_n').min=mn;$(r.id+'_n').max=mx*2;});}
+function writeRow(r,val){const v=r.kind==='spd'?Math.round(val*uf()*10)/10:Math.round(val);$(r.id+'_r').value=v;$(r.id+'_n').value=v;}
+function writeInputs(){ROWS.forEach(r=>writeRow(r,S[r.key]));}
+function layoutRows(){ROWS.forEach(r=>{r.el.hidden=!!r.mode&&r.mode!==S.mode;});
+  const autoOn=S.auto&&S.mode==='direct';$('bs_r').disabled=autoOn;$('bs_n').disabled=autoOn;
+  $('autoTog').hidden=S.mode!=='direct';
+  $('autoTog').querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String((b.dataset.v==='1')===S.auto)));
+  $('types').setAttribute('aria-disabled',String(!autoOn));
+  $('windTitle').textContent=tr(S.mode==='direct'?'wind_direct':'wind_inverse');rowTexts();}
+
+/* ---------- карточки судов ---------- */
+function typeSpec(k){const T=TYPES[k];let mx=0;for(let b=T.nogo;b<=180;b+=2)mx=Math.max(mx,polar(k,20,b));
+  return tr('spec',{n:T.nogo,v:fmt(mx*uf(),0),u:un(),w:fmt(20*uf(),0)});}
+function buildTypes(){const box=$('types');box.textContent='';
+  Object.keys(TYPES).forEach(k=>{const T=TYPES[k];const b=document.createElement('button');b.type='button';b.className='type';b.dataset.t=k;
+    b.setAttribute('aria-pressed',String(S.type===k));
+    const s=el('svg',{viewBox:'-30 -60 60 102','aria-hidden':'true'},null);hullSVG(T,s,1,'var(--ink)','var(--tint)');
+    b.appendChild(s);const nb=document.createElement('b');nb.textContent=tname(k);const sp=document.createElement('span');sp.textContent=typeSpec(k);
+    b.append(nb,sp);box.appendChild(b);});}
+$('types').addEventListener('click',e=>{const b=e.target.closest('.type');if(!b)return;S.type=b.dataset.t;
+  if(S.mode==='direct')S.auto=true;
+  $('types').querySelectorAll('.type').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));layoutRows();render();});
+
+/* ---------- язык ---------- */
+function applyLang(){
+  document.documentElement.lang=LANG;document.title=tr('title');
+  document.querySelectorAll('[data-i18n]').forEach(e=>e.textContent=tr(e.dataset.i18n));
+  document.querySelectorAll('[data-i18n-aria]').forEach(e=>e.setAttribute('aria-label',tr(e.dataset.i18nAria)));
+  $('langTog').querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.v===LANG)));
+  buildTypes();layoutRows();}
+
+/* ---------- переключатели ---------- */
+function tog(id,cb){$(id).addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  $(id).querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));cb(b.dataset.v);render();});}
+let last=null;
+tog('langTog',v=>{LANG=v;try{localStorage.setItem('aw-lang',v);}catch(e){}applyLang();});
+tog('modeTog',v=>{if(v===S.mode)return;
+  if(v==='inverse'&&last){S.A=last.A;S.a=Math.abs(last.awa);S.V=last.V;}
+  if(v==='direct'&&last){S.G=last.G;S.th=Math.abs(last.th);}
+  S.mode=v;layoutRows();writeInputs();});
+tog('unitTog',v=>{S.unit=v;setRanges();writeInputs();buildTypes();rowTexts();});
+tog('tackTog',v=>{S.tack=v;});
+tog('autoTog',v=>{S.auto=v==='1';if(!S.auto&&last)S.V=last.V;layoutRows();writeInputs();});
+$('curChips').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  if(b.dataset.c!=null)S.C=0;else{S.psi=+b.dataset.p;if(S.C<0.05)S.C=2;}writeInputs();render();});
+
+/* ---------- физика ---------- */
+const ang=(x,y)=>Math.atan2(y,x)/D;
+function solveDirect(G,th,C,psi,Vman,auto,type){
+  const t=th*D,air=[-G*Math.cos(t),-G*Math.sin(t)],ph=(th+180+psi)*D,c=[C*Math.cos(ph),C*Math.sin(ph)];
+  const w=[air[0]-c[0],air[1]-c[1]],Ww=Math.hypot(w[0],w[1]),twa=Ww>0?ang(-w[0],-w[1]):th;
+  const V=auto?polar(type,Ww,twa):Vman;
+  const ap=[w[0]-V,w[1]],A=Math.hypot(ap[0],ap[1]),awa=A>0?ang(-ap[0],-ap[1]):0;
+  const sog=[V+c[0],c[1]],SOG=Math.hypot(sog[0],sog[1]),drift=SOG>0?ang(sog[0],sog[1]):0;
+  return {G,th,C,psi,air,c,w,Ww,twa,V,ap,A,awa,sog,SOG,drift,vmg:sog[0]*Math.cos(t)+sog[1]*Math.sin(t),vmgw:V*Math.cos(twa*D)};}
+function solveInverse(A,a,V,C,psi){
+  const ap=[-A*Math.cos(a*D),-A*Math.sin(a*D)],w=[ap[0]+V,ap[1]],fl=Math.atan2(w[1],w[0])/D;
+  const ph=(fl+psi)*D,c=[C*Math.cos(ph),C*Math.sin(ph)],air=[w[0]+c[0],w[1]+c[1]];
+  const G=Math.hypot(air[0],air[1]);let th=G>0?ang(-air[0],-air[1]):0;
+  return solveDirect(G,Math.abs(th),C,th<0?-psi:psi,V,false,S.type);}
+
+/* ---------- прибор ---------- */
+function drawDial(r){
+  const svg=$('dia');svg.textContent='';const sg=S.tack==='stb'?1:-1,T=TYPES[S.type];
+  const defs=el('defs',{},svg);
+  const mk=(n,c)=>{const m=el('marker',{id:'m'+n,viewBox:'0 0 10 10',refX:'8.5',refY:'5',markerWidth:'6',markerHeight:'6',orient:'auto'},defs);el('path',{d:'M0,0 L10,5 L0,10z',style:`fill:var(${c})`},m);};
+  [['t','--d-true'],['a','--d-app'],['c','--d-cur'],['m','--d-motion'],['i','--d-ink']].forEach(x=>mk(...x));
+  const R=176,P=(t,rr)=>[sg*Math.sin(t*D)*rr,-Math.cos(t*D)*rr];
+  const B=(x,y)=>[sg*y,-x];
+  el('circle',{cx:0,cy:0,r:214,style:'fill:var(--d-bg);stroke:var(--d-ring);stroke-width:2'},svg);
+  const arc=(a1,a2,rr)=>{const[x1,y1]=[Math.sin(a1*D)*rr,-Math.cos(a1*D)*rr],[x2,y2]=[Math.sin(a2*D)*rr,-Math.cos(a2*D)*rr];return `M${x1},${y1} A${rr},${rr} 0 0 1 ${x2},${y2}`;};
+  el('path',{d:arc(20,60,R+10),style:'fill:none;stroke:var(--d-stb);stroke-width:6;opacity:.85'},svg);
+  el('path',{d:arc(-60,-20,R+10),style:'fill:none;stroke:var(--d-port);stroke-width:6;opacity:.85'},svg);
+  for(let t=0;t<360;t+=5){const L2=t%30===0?13:(t%10===0?8:4),a=t*D;
+    el('line',{x1:Math.sin(a)*R,y1:-Math.cos(a)*R,x2:Math.sin(a)*(R-L2),y2:-Math.cos(a)*(R-L2),style:`stroke:var(${t%30===0?'--d-ink':'--d-muted'});stroke-width:${t%30===0?1.6:1}`},svg);}
+  for(let t=30;t<360;t+=30){const a=t*D;el('text',{x:Math.sin(a)*(R-28),y:-Math.cos(a)*(R-28)+4,'text-anchor':'middle',style:'fill:var(--d-muted);font:500 12px var(--f-num)'},svg,t<=180?t:360-t);}
+  el('line',{x1:0,y1:-R+16,x2:0,y2:-58,style:'stroke:var(--d-ring);stroke-width:1.5;stroke-dasharray:3 4'},svg);
+  const ptr=(t,c,hollow)=>{const[x,y]=P(t,R+10);const a=Math.atan2(y,x);
+    const tip=[x-Math.cos(a)*6,y-Math.sin(a)*6],b1=[x+Math.cos(a)*12+Math.cos(a+Math.PI/2)*8,y+Math.sin(a)*12+Math.sin(a+Math.PI/2)*8],b2=[x+Math.cos(a)*12-Math.cos(a+Math.PI/2)*8,y+Math.sin(a)*12-Math.sin(a+Math.PI/2)*8];
+    el('path',{d:`M${tip} L${b1} L${b2}Z`,style:hollow?`fill:var(--d-bg);stroke:var(${c});stroke-width:2`:`fill:var(${c});stroke:var(--d-bg);stroke-width:1.5`},svg);};
+  if(r.C>0.05)ptr(r.th,'--d-true',true);
+  ptr(r.twa,'--d-true',false);ptr(r.awa,'--d-app',false);
+  const k=(r.G+r.C+r.V)>0?138/(r.G+r.C+r.V):0;
+  const mul=(v,s)=>[v[0]*s,v[1]*s],add=(a,b)=>[a[0]+b[0],a[1]+b[1]];
+  const tail=mul(r.ap,-k),p1=add(tail,mul(r.air,k)),p2=add(p1,mul(r.c,-k));
+  const seg=(a,b,c,m,w,dash)=>{const A=B(...a),Bb=B(...b);if(Math.hypot(Bb[0]-A[0],Bb[1]-A[1])<4)return null;
+    return el('line',{x1:A[0],y1:A[1],x2:Bb[0],y2:Bb[1],'marker-end':m?`url(#m${m})`:'',style:`stroke:var(${c});stroke-width:${w};stroke-linecap:round;${dash?'stroke-dasharray:6 5':''}`},svg);};
+  const lab=(a,b,c,txt,side)=>{const A=B(...a),Bb=B(...b);let nx=-(Bb[1]-A[1]),ny=Bb[0]-A[0];const n=Math.hypot(nx,ny);if(n<26)return;nx/=n;ny/=n;
+    el('text',{x:(A[0]+Bb[0])/2+nx*side,y:(A[1]+Bb[1])/2+ny*side+4,'text-anchor':'middle',style:`fill:var(${c});font:500 13px var(--f-num);paint-order:stroke;stroke:var(--d-bg);stroke-width:4px`},svg,txt);};
+  const u=un(),f=uf();
+  if(r.C>0.05)seg(tail,p2,'--d-true',null,2,true);
+  seg(tail,p1,'--d-true','t',3);seg(p1,p2,'--d-cur','c',3);seg(p2,[0,0],'--d-motion','m',3);seg(tail,[0,0],'--d-app','a',4);
+  lab(tail,p1,'--d-true',fmt(r.G*f)+' '+u,-15*sg);
+  if(r.C>0.05)lab(p1,p2,'--d-cur',fmt(r.C*f),-15*sg);
+  lab(p2,[0,0],'--d-motion',fmt(r.V*f),-15*sg);
+  lab(tail,[0,0],'--d-app',fmt(r.A*f)+' '+u,15*sg);
+  const h=el('g',{},svg);hullSVG(T,h,1.05,'var(--d-ink)','var(--d-bg)');
+  if(r.SOG>0.05){const Lg=Math.min(130,40+r.SOG*k*0.9),d=r.drift*D,e=B(Math.cos(d)*Lg,Math.sin(d)*Lg),s=B(Math.cos(d)*50,Math.sin(d)*50);
+    el('line',{x1:s[0],y1:s[1],x2:e[0],y2:e[1],'marker-end':'url(#mi)',style:'stroke:var(--d-ink);stroke-width:2;stroke-dasharray:2 4;stroke-linecap:round'},svg);
+    el('text',{x:e[0]+(e[0]>=0?8:-8),y:e[1]-6,'text-anchor':e[0]>=0?'start':'end',style:'fill:var(--d-ink);font:500 12px var(--f-num)'},svg,'SOG '+fmt(r.SOG*f));}
+}
+
+/* ---------- полярная диаграмма ---------- */
+function niceMax(v){for(const x of [2,4,5,6,8,10,12,15,20,25,30,40,50,60,80,100])if(v<=x)return x;return Math.ceil(v/20)*20;}
+function drawPolar(r){
+  const svg=$('polar');svg.textContent='';const f=uf(),T=TYPES[S.type];
+  const cx=40,cy=215,Rm=200;
+  const wl=(S.unit==='kn'?[6,10,14,20,25]:[3,5,7,10,13]).map(w=>w/f);
+  let vmax=0;for(const w of wl.concat([r.Ww]))for(let b=0;b<=180;b+=3)vmax=Math.max(vmax,polar(S.type,w,b));
+  vmax=Math.max(vmax,r.V);const top=niceMax(vmax*f*1.05),sc=Rm/top;
+  const P=(b,v)=>[cx+Math.sin(b*D)*v*f*sc,cy-Math.cos(b*D)*v*f*sc];
+  const ng=T.nogo;el('path',{d:`M${cx},${cy} L${cx},${cy-Rm} A${Rm},${Rm} 0 0 1 ${cx+Math.sin(ng*D)*Rm},${cy-Math.cos(ng*D)*Rm}Z`,style:'fill:var(--app);opacity:.07'},svg);
+  const step=top<=10?2:(top<=20?5:10);
+  for(let v=step;v<=top+1e-9;v+=step){el('path',{d:`M${cx},${cy-v*sc} A${v*sc},${v*sc} 0 0 1 ${cx},${cy+v*sc}`,style:'fill:none;stroke:var(--line);stroke-width:1'},svg);
+    el('text',{x:cx-6,y:cy-v*sc+4,'text-anchor':'end',style:'fill:var(--muted);font:10.5px var(--f-mono)'},svg,v);}
+  for(let b=0;b<=180;b+=30){const[x,y]=[cx+Math.sin(b*D)*Rm,cy-Math.cos(b*D)*Rm];
+    el('line',{x1:cx,y1:cy,x2:x,y2:y,style:'stroke:var(--line);stroke-width:1'},svg);
+    if(b>0&&b<180)el('text',{x:cx+Math.sin(b*D)*(Rm+14),y:cy-Math.cos(b*D)*(Rm+14)+4,'text-anchor':'middle',style:'fill:var(--muted);font:10.5px var(--f-mono)'},svg,b+'°');}
+  el('text',{x:cx,y:cy-Rm-8,'text-anchor':'middle',style:'fill:var(--muted);font:10.5px var(--f-mono)'},svg,'0°');
+  el('text',{x:cx,y:cy+Rm+16,'text-anchor':'middle',style:'fill:var(--muted);font:10.5px var(--f-mono)'},svg,'180°');
+  el('text',{x:cx+26,y:cy+Rm+16,style:'fill:var(--muted);font:10.5px var(--f-body)'},svg,un());
+  const curve=w=>{let d='';for(let b=ng*0.7;b<=180.01;b+=2){const[x,y]=P(b,polar(S.type,w,b));d+=(d?'L':'M')+x.toFixed(1)+','+y.toFixed(1);}return d;};
+  wl.forEach(w=>{el('path',{d:curve(w),style:'fill:none;stroke:var(--muted);stroke-width:1;opacity:.55'},svg);
+    const[x,y]=P(100,polar(S.type,w,100));el('text',{x:x+4,y:y-3,style:'fill:var(--muted);font:10px var(--f-mono);opacity:.85'},svg,fmt(w*f,0));});
+  el('path',{d:curve(r.Ww),style:'fill:none;stroke:var(--motion);stroke-width:2.6;stroke-linejoin:round'},svg);
+  const[px,py]=P(Math.abs(r.twa),r.V);
+  el('line',{x1:cx,y1:cy,x2:px,y2:py,style:'stroke:var(--ink);stroke-width:1;stroke-dasharray:3 3'},svg);
+  el('circle',{cx:px,cy:py,r:6,style:'fill:var(--motion);stroke:var(--surface);stroke-width:2'},svg);
+  $('polarKey').innerHTML=`<span style="color:var(--motion)"><i style="background:var(--motion)"></i>${tr('pk_main',{n:tname(S.type),w:fmt(r.Ww*f),u:un()})}</span><span><i style="background:var(--muted);opacity:.6"></i>${tr('pk_other')}</span><span style="color:var(--app)"><i style="background:var(--app);opacity:.25;height:8px"></i>${tr('pk_nogo')}</span>`;
+}
+
+/* ---------- линейные графики ---------- */
+function lineChart(svg,{ymax,yt,series,shade,pts,ylab}){
+  svg.textContent='';const Lm=42,Rr=10,T=10,Bm=32,W=560-Lm-Rr,H=250-T-Bm;
+  const X=t=>Lm+t/180*W,Y=v=>T+H-Math.min(v,ymax*1.04)/ymax*H;
+  (shade||[]).forEach(([a,b])=>el('rect',{x:X(a),y:T,width:X(b)-X(a),height:H,style:'fill:var(--app);opacity:.07'},svg));
+  yt.forEach(v=>{el('line',{x1:Lm,x2:Lm+W,y1:Y(v),y2:Y(v),style:'stroke:var(--line);stroke-width:1'},svg);
+    el('text',{x:Lm-6,y:Y(v)+4,'text-anchor':'end',style:'fill:var(--muted);font:10.5px var(--f-mono)'},svg,v);});
+  for(let t=0;t<=180;t+=30)el('text',{x:X(t),y:T+H+15,'text-anchor':'middle',style:'fill:var(--muted);font:10.5px var(--f-mono)'},svg,t+'°');
+  el('text',{x:Lm+W,y:T+H+29,'text-anchor':'end',style:'fill:var(--muted);font:11px var(--f-body)'},svg,tr('ax_x'));
+  el('text',{x:Lm+4,y:T+11,style:'fill:var(--muted);font:11px var(--f-body)'},svg,ylab);
+  series.forEach(s=>{if(!s.pts)return;el('path',{d:s.pts.map((p,i)=>(i?'L':'M')+X(p[0]).toFixed(1)+','+Y(p[1]).toFixed(1)).join(''),style:`fill:none;stroke:var(${s.c});stroke-width:${s.w||2.2};${s.dash?'stroke-dasharray:6 5;':''}stroke-linejoin:round`},svg);});
+  pts.forEach(p=>el('circle',{cx:X(p[0]),cy:Y(p[1]),r:5,style:`fill:var(${p[2]});stroke:var(--surface);stroke-width:2`},svg));
+}
+
+/* ---------- статус ---------- */
+function status(r){const f=uf(),u=un(),T=TYPES[S.type];const parts=[];
+  const autoOn=S.auto&&S.mode==='direct';
+  if(autoOn&&Math.abs(r.twa)<T.nogo)parts.push(`<span class="warn">${tr('nogo',{n:tnameLow(S.type),a:T.nogo})}</span>`);
+  if(r.C>0.05){const b=solveDirect(r.G,r.th,0,0,S.mode==='direct'&&!S.auto?S.V:r.V,autoOn,S.type);
+    parts.push(tr('cur1',{ww:fmt(r.Ww*f),u,twa:fmt(Math.abs(r.twa),0),g:fmt(r.G*f),th:fmt(r.th,0),awa:fmt(Math.abs(r.awa),0),awa0:fmt(Math.abs(b.awa),0),a:fmt(r.A*f),a0:fmt(b.A*f)}));
+    if(autoOn)parts.push(tr('cur2',{v:fmt(r.V*f),u,v0:fmt(b.V*f)}));
+    parts.push(tr('cur3',{d:fmt(Math.abs(r.drift),0),s:Math.abs(r.drift)<0.5?'':tr(r.drift*(S.tack==='stb'?1:-1)>0?'right':'left')}));}
+  else{const q=r.G>0?r.V/r.G:0;
+    parts.push(r.G<=0?tr('nowind'):q<1?tr('maxs',{q:fmt(q,2),d:fmt(Math.asin(q)/D,0),b:fmt(Math.acos(-q)/D,0)}):tr('faster',{q:fmt(q,2)}));}
+  $('status').innerHTML=parts.join(' ');}
+
+/* ---------- рендер ---------- */
+function cell(k,v,unit,cls){return `<div class="cell ${cls}"><div class="k">${k}</div><div class="v">${v}<small>${unit}</small></div></div>`;}
+function render(){
+  const autoOn=S.auto&&S.mode==='direct';
+  const r=S.mode==='direct'?solveDirect(S.G,S.th,S.C,S.psi,S.V,autoOn,S.type):solveInverse(S.A,S.a,S.V,S.C,S.psi);
+  last=r;const f=uf(),u=un();
+  if(autoOn)writeRow(ROWS[4],r.V);
+  const p=((S.psi%360)+540)%360-180,ap=Math.abs(p);
+  $('psi_h').textContent=tr(ap<=20?'psi_with':ap>=160?'psi_against':(p>0?'psi_right':'psi_left'));
+  $('boatHint').textContent=autoOn?tr('hint_auto',{n:tname(S.type)}):tr(S.mode==='inverse'?'hint_inv':'hint_man');
+  $('read').innerHTML=
+    cell('AWA',fmt(Math.abs(r.awa),0),'°','c-app')+cell('AWS',fmt(r.A*f),u,'c-app')+
+    cell(tr('twa_water'),fmt(Math.abs(r.twa),0),'°','c-true')+cell(tr('tws_water'),fmt(r.Ww*f),u,'c-true')+
+    cell(tr('cell_bs'),fmt(r.V*f),u,'c-mot')+cell('SOG',fmt(r.SOG*f),u,'')+
+    (S.mode==='direct'?cell(tr('cell_shift'),fmt(Math.abs(r.twa)-Math.abs(r.awa),0),'°',''):cell(tr('cell_ground'),fmt(r.G*f),u,'c-true'))+
+    cell(tr('cell_vmg'),fmt(r.vmg*f),u,'c-cur');
+  drawDial(r);status(r);drawPolar(r);
+  const A1=[],A2=[],S1=[],S2=[],S3=[],shade=[];let s0=null;const T=TYPES[S.type];const Vm=autoOn?0:(S.mode==='direct'?S.V:r.V);
+  for(let t=0;t<=180;t+=1){const q=solveDirect(r.G,t,r.C,r.psi,Vm,autoOn,S.type);
+    A1.push([t,Math.abs(q.awa)]);A2.push([t,Math.abs(q.twa)]);S1.push([t,q.A*f]);S2.push([t,q.V*f]);S3.push([t,q.SOG*f]);
+    const ng=autoOn&&Math.abs(q.twa)<T.nogo;if(ng&&s0===null)s0=t;if(!ng&&s0!==null){shade.push([s0,t]);s0=null;}}
+  if(s0!==null)shade.push([s0,180]);
+  const cur=r.C>0.05;
+  lineChart($('ch1'),{ymax:180,yt:[0,30,60,90,120,150,180],shade,ylab:tr('ax_angle'),
+    series:[{pts:[[0,0],[180,180]],c:'--muted',w:1.2,dash:true},{pts:cur?A2:null,c:'--true',w:1.8,dash:true},{pts:A1,c:'--app',w:2.6}],
+    pts:[[r.th,Math.abs(r.awa),'--app']]});
+  let ym=0;[S1,S2,S3].forEach(a=>a.forEach(q=>ym=Math.max(ym,q[1])));ym=niceMax(Math.max(ym,r.G*f)*1.05);const st=ym/5,yt=[];for(let v=0;v<=ym+1e-9;v+=st)yt.push(+v.toFixed(1));
+  lineChart($('ch2'),{ymax:ym,yt,shade,ylab:tr('ax_speed',{u}),
+    series:[{pts:[[0,r.G*f],[180,r.G*f]],c:'--true',w:1.4,dash:true},{pts:cur?S3:null,c:'--ink',w:1.6,dash:true},{pts:S2,c:'--motion',w:2.4},{pts:S1,c:'--app',w:2.6}],
+    pts:[[r.th,r.A*f,'--app'],[r.th,r.V*f,'--motion']]});
+}
+
+/* ---------- волны в шапке ---------- */
+function waves(){const c=$('waves');const ctx=c.getContext&&c.getContext('2d');if(!ctx)return;
+  const dpr=window.devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*dpr;c.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--band-muted').trim()||'#8fb0c4';ctx.lineWidth=1;
+  for(let i=0;i<14;i++){ctx.globalAlpha=0.12+0.25*(i/14);ctx.beginPath();const y0=h*0.15+i*h*0.07;
+    for(let x=0;x<=w;x+=6){const y=y0+Math.sin(x/90+i*0.7)*6+Math.sin(x/37+i)*2.5;x?ctx.lineTo(x,y):ctx.moveTo(x,y);}ctx.stroke();}}
+window.addEventListener('resize',waves);
+window.addEventListener('hashchange',()=>{const h=location.hash.slice(1).toLowerCase();if(LANGS.includes(h)&&h!==LANG){LANG=h;applyLang();render();}});
+
+setRanges();writeInputs();applyLang();render();waves();
+})();
+</script>
+
+</body>
+</html>
